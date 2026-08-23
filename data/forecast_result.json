@@ -1,19 +1,9 @@
 {
-  "last_update": "2026-08-23 14:08:57",
-  "danger_index": 50.1,
-  "danger_status": "\ud83d\udfe1 \u041d\u0430\u043f\u0440\u044f\u0436\u0451\u043d\u043d\u043e",
-  "weighted_change": 0.0024078743250683845,
-  "changes": {
-    "gold": 0.02077264848923841,
-    "brent": 0.0009501302442019875,
-    "vix": -0.01610900155140482,
-    "dxy": -0.0002021292126222714,
-    "ai_gpr": 0.0,
-    "gpr": 0.0,
-    "gecon": 0.0,
-    "crisis_ratio": 0.0,
-    "conflict_intensity": 0.0
-  },
+  "last_update": "2026-08-23 17:48:43",
+  "danger_index": 20.936120986938477,
+  "danger_status": "\ud83d\udfe2 \u0421\u043f\u043e\u043a\u043e\u0439\u043d\u043e",
+  "weighted_change": -0.5812775802612304,
+  "changes": {},
   "forecast": [
     370.32074071059645,
     370.0191254803264,
