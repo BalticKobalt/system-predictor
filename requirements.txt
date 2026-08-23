@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pandas
+numpy
+torch
+scikit-learn
+openpyxl
+pyreadstat
+requests
