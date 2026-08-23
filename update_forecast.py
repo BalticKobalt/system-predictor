@@ -49,47 +49,66 @@ if os.path.exists(MASTER_PATH):
     df = pd.read_csv(MASTER_PATH, index_col=0, parse_dates=True)
     print(f"✅ Загружено {len(df)} строк, с {df.index.min()} по {df.index.max()}")
 else:
-    print("❌ master_data.csv не найден! Создаю из исходников...")
-    # Здесь можно добавить код для создания из базовых файлов
+    print("❌ master_data.csv не найден!")
     exit()
 
 # --- 2. ОБНОВЛЕНИЕ ЦЕН (ежедневно) ---
 print("\n📈 Обновляем цены через yfinance...")
 try:
     # Скачиваем последние данные
-    gold_new = yf.download("GC=F", period="5d")['Close'].rename('gold')
-    brent_new = yf.download("BZ=F", period="5d")['Close'].rename('brent')
-    vix_new = yf.download("^VIX", period="5d")['Close'].rename('vix')
-    dxy_new = yf.download("DX-Y.NYB", period="5d")['Close'].rename('dxy')
-    
+    gold_data = yf.download("GC=F", period="5d")
+    if not gold_data.empty:
+        gold_new = gold_data['Close'].rename('gold')
+        print(f"   Золото: {len(gold_new)} дней")
+    else:
+        gold_new = pd.Series()
+
+    brent_data = yf.download("BZ=F", period="5d")
+    if not brent_data.empty:
+        brent_new = brent_data['Close'].rename('brent')
+        print(f"   Нефть: {len(brent_new)} дней")
+    else:
+        brent_new = pd.Series()
+
+    vix_data = yf.download("^VIX", period="5d")
+    if not vix_data.empty:
+        vix_new = vix_data['Close'].rename('vix')
+        print(f"   VIX: {len(vix_new)} дней")
+    else:
+        vix_new = pd.Series()
+
+    dxy_data = yf.download("DX-Y.NYB", period="5d")
+    if not dxy_data.empty:
+        dxy_new = dxy_data['Close'].rename('dxy')
+        print(f"   DXY: {len(dxy_new)} дней")
+    else:
+        dxy_new = pd.Series()
+
     # Объединяем новые данные
     new_prices = pd.concat([gold_new, brent_new, vix_new, dxy_new], axis=1).dropna()
-    print(f"✅ Загружено {len(new_prices)} новых дней")
     
-    # Добавляем в мастер-таблицу
-    for col in ['gold', 'brent', 'vix', 'dxy']:
-        if col in new_prices.columns:
-            # Обновляем только новые даты
-            for date in new_prices.index:
-                if date not in df.index:
-                    df.loc[date, col] = new_prices.loc[date, col]
-    
-    print("✅ Цены обновлены")
+    if not new_prices.empty:
+        print(f"✅ Загружено {len(new_prices)} новых дней")
+        
+        # Добавляем в мастер-таблицу
+        for col in ['gold', 'brent', 'vix', 'dxy']:
+            if col in new_prices.columns:
+                for date in new_prices.index:
+                    if date not in df.index:
+                        df.loc[date, col] = new_prices.loc[date, col]
+        print("✅ Цены обновлены")
+    else:
+        print("⚠️ Новых данных по ценам нет")
+        
 except Exception as e:
     print(f"⚠️ Ошибка обновления цен: {e}")
 
 # --- 3. ОБНОВЛЕНИЕ AI-GPR (раз в месяц) ---
-# Проверяем, когда последний раз обновлялся AI-GPR
 last_ai_update = None
-if 'ai_gpr_last_update' in df.attrs:
-    last_ai_update = df.attrs['ai_gpr_last_update']
-else:
-    # Проверяем по дате последней записи в ai_gpr
-    ai_dates = df['ai_gpr'].dropna()
-    if len(ai_dates) > 0:
-        last_ai_update = ai_dates.index[-1]
+ai_dates = df['ai_gpr'].dropna()
+if len(ai_dates) > 0:
+    last_ai_update = ai_dates.index[-1]
 
-# Если прошло больше 30 дней или данных нет — скачиваем
 need_ai_update = True
 if last_ai_update is not None:
     days_since = (datetime.now() - last_ai_update).days
@@ -102,27 +121,19 @@ if need_ai_update:
     try:
         response = requests.get(AI_GPR_URL, timeout=60)
         if response.status_code == 200:
-            # Сохраняем временный файл
             temp_path = DATA_DIR + 'ai_gpr_temp.csv'
             with open(temp_path, 'w') as f:
                 f.write(response.text)
             
-            # Загружаем
             ai_gpr_new = pd.read_csv(temp_path, parse_dates=['Date'], index_col='Date')
             ai_gpr_new = ai_gpr_new[['GPR_AI']].rename(columns={'GPR_AI': 'ai_gpr'})
             
-            # Обновляем в мастер-таблице
             for date in ai_gpr_new.index:
                 if date in df.index:
                     df.loc[date, 'ai_gpr'] = ai_gpr_new.loc[date, 'ai_gpr']
                 else:
-                    # Если даты нет в df, добавляем (но это редко)
                     df.loc[date, 'ai_gpr'] = ai_gpr_new.loc[date, 'ai_gpr']
             
-            # Сохраняем дату обновления
-            df.attrs['ai_gpr_last_update'] = datetime.now()
-            
-            # Удаляем временный файл
             os.remove(temp_path)
             print("✅ AI-GPR обновлён")
         else:
@@ -133,10 +144,7 @@ else:
     print("⏳ AI-GPR актуален, пропускаем")
 
 # --- 4. СОХРАНЯЕМ ОБНОВЛЁННУЮ ТАБЛИЦУ ---
-# Заполняем пропуски
 df = df.ffill().bfill().fillna(0)
-
-# Сохраняем
 df.to_csv(MASTER_PATH)
 print(f"\n✅ master_data.csv сохранён: {len(df)} строк, с {df.index.min()} по {df.index.max()}")
 
@@ -148,8 +156,11 @@ scaled_data = scaler.fit_transform(df_selected.values)
 
 model = LSTMPredictor(input_size=len(features))
 if os.path.exists(WEIGHTS_PATH):
-    model.load_state_dict(torch.load(WEIGHTS_PATH, map_location='cpu'))
-    print("✅ Веса модели загружены")
+    try:
+        model.load_state_dict(torch.load(WEIGHTS_PATH, map_location='cpu'))
+        print("✅ Веса модели загружены")
+    except Exception as e:
+        print(f"⚠️ Ошибка загрузки весов: {e}")
 else:
     print("⚠️ Веса не найдены!")
 
@@ -168,7 +179,6 @@ for _ in range(30):
     new_row[0] = next_pred.item()
     current_seq = np.vstack([current_seq[1:], new_row])
 
-# Обратное масштабирование
 dummy_future = np.zeros((len(future_preds), len(features)))
 dummy_future[:, 0] = future_preds
 future_prices = scaler.inverse_transform(dummy_future)[:, 0]
@@ -176,20 +186,17 @@ future_prices = scaler.inverse_transform(dummy_future)[:, 0]
 # --- 7. РАСЧЁТ ИНДЕКСА ОПАСНОСТИ ---
 today_price = future_prices[0]
 week_price = future_prices[6]
-change = (week_price - today_price) / today_price * 100
+change = (week_price - today_price) / today_price * 100 if today_price != 0 else 0
 
-# Нормализуем в шкалу 1-100 (1 — хорошо, 100 — плохо)
-# change от -10% до +10% → индекс от 100 до 1
 if change >= 10:
     danger_index = 1
 elif change <= -10:
     danger_index = 100
 else:
-    danger_index = 50 - (change / 10) * 49  # линейная интерполяция
+    danger_index = 50 - (change / 10) * 49
 
-danger_index = max(1, min(100, danger_index))  # Ограничиваем 1-100
+danger_index = max(1, min(100, danger_index))
 
-# Определяем статус
 if danger_index < 30:
     status = "🟢 Стабильно"
     color = "green"
@@ -218,5 +225,4 @@ with open(FORECAST_PATH, 'w') as f:
 
 print(f"\n✅ Прогноз сохранён в {FORECAST_PATH}")
 print(f"📊 Индекс опасности: {result['danger_index']} — {result['danger_status']}")
-
 print("\n🚀 Скрипт завершён успешно!")
