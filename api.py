@@ -1,31 +1,33 @@
 import pandas as pd
 import numpy as np
+import json
+import os
 import torch
 import torch.nn as nn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sklearn.preprocessing import MinMaxScaler
-import os
 from datetime import datetime
 
 app = FastAPI(title="System Predictor API", version="0.1")
 
-# ===== КЛЮЧЕВОЙ МОМЕНТ: РАЗРЕШАЕМ CORS =====
+# ===== РАЗРЕШАЕМ CORS =====
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Разрешаем запросы с любых доменов (для теста)
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Разрешаем все методы (GET, POST и т.д.)
-    allow_headers=["*"],  # Разрешаем все заголовки
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# --- КОНФИГУРАЦИЯ ---
+# ===== КОНФИГУРАЦИЯ =====
 DATA_PATH = 'data/master_data.csv'
 WEIGHTS_PATH = 'data/lstm_weights_9features.pth'
+FORECAST_PATH = 'data/forecast_result.json'
 SEQ_LEN = 60
 
-# --- ОПРЕДЕЛЕНИЕ МОДЕЛИ LSTM ---
+# ===== ОПРЕДЕЛЕНИЕ МОДЕЛИ (если понадобится) =====
 class LSTMPredictor(nn.Module):
     def __init__(self, input_size, hidden_size=128, num_layers=3):
         super().__init__()
@@ -42,108 +44,96 @@ class LSTMPredictor(nn.Module):
         out = self.dropout(out)
         return self.fc2(out)
 
-# --- ЗАГРУЗКА ДАННЫХ И МОДЕЛИ (при старте) ---
-print("🚀 Загружаем API...")
+# ===== ЗАГРУЗКА МОДЕЛИ (если нужно) =====
+model_loaded = False
+model = None
+scaler = None
+df_selected = None
+features = None
 
-df = pd.read_csv(DATA_PATH, index_col=0, parse_dates=True)
-features = ['gold', 'brent', 'vix', 'dxy', 'ai_gpr', 'gpr', 'gecon', 'crisis_ratio', 'conflict_intensity']
-df_selected = df[features].copy().ffill().bfill().fillna(0)
-
-print(f"📊 Загружено {len(df_selected)} строк, признаки: {df_selected.columns.tolist()}")
-
-scaler = MinMaxScaler()
-scaled_data = scaler.fit_transform(df_selected.values)
-
-model = LSTMPredictor(input_size=len(features))
-if os.path.exists(WEIGHTS_PATH):
+def load_model():
+    global model_loaded, model, scaler, df_selected, features
+    if model_loaded:
+        return
+    
+    print("🚀 Загружаем модель (для резерва)...")
     try:
-        model.load_state_dict(torch.load(WEIGHTS_PATH, map_location='cpu'))
-        print("✅ Веса модели загружены")
+        if not os.path.exists(DATA_PATH):
+            print("   ⚠️ master_data.csv не найден")
+            return
+        
+        df = pd.read_csv(DATA_PATH, index_col=0, parse_dates=True)
+        features = ['gold', 'brent', 'vix', 'dxy', 'ai_gpr', 'gpr', 'gecon', 'crisis_ratio', 'conflict_intensity']
+        df_selected = df[features].copy().ffill().bfill().fillna(0)
+        
+        scaler = MinMaxScaler()
+        scaler.fit_transform(df_selected.values)
+        
+        model = LSTMPredictor(input_size=len(features))
+        if os.path.exists(WEIGHTS_PATH):
+            model.load_state_dict(torch.load(WEIGHTS_PATH, map_location='cpu'))
+            model.eval()
+            print("   ✅ Веса загружены (резерв)")
+        else:
+            print("   ⚠️ Веса не найдены")
+        
+        model_loaded = True
     except Exception as e:
-        print(f"⚠️ Ошибка загрузки весов: {e}")
-else:
-    print("⚠️ Веса не найдены")
+        print(f"   ❌ Ошибка загрузки модели: {e}")
 
-model.eval()
-
-# --- ФУНКЦИИ ---
-def get_last_valid_date(df_selected):
-    last_date = df_selected.index[-1]
-    if isinstance(last_date, str):
-        try:
-            last_date = pd.to_datetime(last_date)
-        except:
-            last_date = datetime.now()
-    elif pd.isna(last_date):
-        last_date = datetime.now()
-    return last_date
-
-def make_forecast(days=30):
-    last_seq = scaled_data[-SEQ_LEN:]
-    future_preds = []
-    current_seq = last_seq.copy()
-    for _ in range(days):
-        with torch.no_grad():
-            next_pred = model(torch.tensor(current_seq, dtype=torch.float32).unsqueeze(0))
-        future_preds.append(next_pred.item())
-        new_row = current_seq[-1].copy()
-        new_row[0] = next_pred.item()
-        current_seq = np.vstack([current_seq[1:], new_row])
-    dummy_future = np.zeros((len(future_preds), len(features)))
-    dummy_future[:, 0] = future_preds
-    return scaler.inverse_transform(dummy_future)[:, 0]
-
-def get_interpretation(prices, days):
-    if len(prices) < 2:
-        return "Недостаточно данных."
-    change = (prices[-1] - prices[0]) / prices[0] * 100
-    if change > 2:
-        return f"📈 Ожидается рост цены золота на {change:.1f}% за {days} дней."
-    elif change < -2:
-        return f"📉 Ожидается падение цены золота на {abs(change):.1f}% за {days} дней."
-    else:
-        return f"⚖️ Цена золота останется стабильной (изменение {change:.1f}%) за {days} дней."
-
-# --- ЭНДПОИНТЫ ---
+# ===== ЭНДПОИНТЫ =====
 @app.get("/")
 def root():
-    return {"message": "System Predictor API is running"}
+    return {
+        "message": "System Predictor API is running",
+        "version": "0.2",
+        "mode": "file-based (forecast_result.json)"
+    }
 
 @app.get("/forecast")
 def get_forecast():
+    """Возвращает прогноз из forecast_result.json"""
     try:
-        forecast_30 = make_forecast(30)
-        forecast_7 = forecast_30[:7]
-        last_date = get_last_valid_date(df_selected)
-        return {
-            "last_update": last_date.strftime("%Y-%m-%d"),
-            "weekly": {
-                "gold": float(forecast_7[-1]),
-                "days": 7,
-                "interpretation": get_interpretation(forecast_7, 7)
-            },
-            "monthly": {
-                "gold": float(forecast_30[-1]),
-                "days": 30,
-                "interpretation": get_interpretation(forecast_30, 30)
-            },
-            "full_forecast": forecast_30.tolist()
-        }
+        if os.path.exists(FORECAST_PATH):
+            with open(FORECAST_PATH, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            return {
+                "source": "forecast_result.json",
+                **data
+            }
+        else:
+            # Резерв: если файла нет, пытаемся считать на лету
+            load_model()
+            if model_loaded and model is not None:
+                # ... (старый код расчёта)
+                return {"error": "Файл не найден, расчёт пока не реализован в этой версии"}
+            else:
+                return JSONResponse(
+                    status_code=404,
+                    content={"error": "forecast_result.json not found and model not loaded"}
+                )
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
 
 @app.get("/health")
 def health_check():
     return {
         "status": "healthy",
-        "data_rows": len(df_selected),
-        "features_count": len(features),
-        "weights_loaded": os.path.exists(WEIGHTS_PATH)
+        "forecast_exists": os.path.exists(FORECAST_PATH),
+        "model_loaded": model_loaded
     }
 
 @app.get("/features")
 def get_features():
-    return {"features": features}
+    return {
+        "features": [
+            "gold", "brent", "vix", "dxy", "ai_gpr",
+            "gpr", "gecon", "crisis_ratio", "conflict_intensity"
+        ]
+    }
 
 if __name__ == "__main__":
     import uvicorn
