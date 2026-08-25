@@ -2,8 +2,8 @@ name: Daily Forecast Update
 
 "on":
   schedule:
-    - cron: "0 6 * * *"  # Каждый день в 6:00 UTC (9:00 по Москве)
-  workflow_dispatch:      # Ручной запуск из интерфейса GitHub
+    - cron: "0 6 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: write
