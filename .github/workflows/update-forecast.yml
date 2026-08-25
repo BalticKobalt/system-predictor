@@ -2,11 +2,11 @@ name: Daily Forecast Update
 
 on:
   schedule:
-    - cron: "0 6 * * *"  # Запуск каждый день в 6:00 UTC (9:00 по Москве)
-  workflow_dispatch:      # Позволяет запустить вручную из интерфейса GitHub
+    - cron: "0 6 * * *"  # Каждый день в 6:00 UTC (9:00 по Москве)
+  workflow_dispatch:      # Ручной запуск из интерфейса GitHub
 
 permissions:
-  contents: write         # Даём права на запись в репозиторий
+  contents: write
 
 jobs:
   update:
@@ -27,13 +27,11 @@ jobs:
 
       - name: Run forecast update
         run: python update_forecast.py
-        env:
-          # Секреты не нужны, так как скрипт работает с локальными файлами
 
       - name: Commit and push if changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A data/
-          git diff --staged --quiet || git commit -m "Автоматическое обновление индекса $(date -u +'%Y-%m-%d')"
+          git diff --staged --quiet || git commit -m "Automated forecast update $(date -u +'%Y-%m-%d')"
           git push
