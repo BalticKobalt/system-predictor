@@ -1,9 +1,19 @@
 {
-  "last_update": "2026-08-26 21:38:57",
-  "danger_index": 28.38544464111328,
+  "last_update": "2026-08-26 22:13:28",
+  "danger_index": 30.595277786254883,
   "danger_status": "\ud83d\udfe2 \u0421\u043f\u043e\u043a\u043e\u0439\u043d\u043e",
-  "weighted_change": -0.4322911071777344,
-  "changes": {},
+  "weighted_change": -0.38809444427490236,
+  "changes": {
+    "gold": -0.01178944660733428,
+    "brent": 0.0,
+    "vix": 0.0,
+    "dxy": 0.0,
+    "ai_gpr": 0.0,
+    "gpr": 0.0,
+    "gecon": 0.0,
+    "crisis_ratio": 0.0,
+    "conflict_intensity": 0.0
+  },
   "forecast": [
     370.439401185652,
     370.1238866360147,

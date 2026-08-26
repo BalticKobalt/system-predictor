@@ -10,6 +10,15 @@ from fastapi.responses import JSONResponse
 from sklearn.preprocessing import MinMaxScaler
 from datetime import datetime
 
+# ===== ПЕРЕКЛЮЧАЕМ ВЫВОД НА UTF-8 (чтобы emoji не падали в Windows-консоли) =====
+import sys, io
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 app = FastAPI(title="System Predictor API", version="0.1")
 
 # ===== РАЗРЕШАЕМ CORS =====

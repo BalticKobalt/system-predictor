@@ -11,6 +11,15 @@ import requests
 import warnings
 warnings.filterwarnings('ignore')
 
+# ===== ПЕРЕКЛЮЧАЕМ ВЫВОД НА UTF-8 (чтобы emoji не падали в Windows-консоли) =====
+import sys, io
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 print("🚀 Запуск ежедневного обновления прогноза...")
 today = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 print(f"📅 {today}")
@@ -284,21 +293,22 @@ if os.path.exists(risk_model_path):
         print(f"⚠️ Ошибка при дообучении/прогнозе: {e}")
         risk_model_loaded = False
 
-# --- 10. ЗАПАСНОЙ ВАРИАНТ (если модель не загрузилась) ---
+# --- 10. ИЗМЕНЕНИЯ ПО ПРИЗНАКАМ (для вывода и запасного варианта) ---
+changes = {}
+if len(df_selected) >= 2:
+    last_values = df_selected.iloc[-1]
+    prev_values = df_selected.iloc[-2]
+    for feature in features:
+        if prev_values[feature] != 0:
+            changes[feature] = (last_values[feature] - prev_values[feature]) / abs(prev_values[feature])
+        else:
+            changes[feature] = 0
+
+# --- 11. ЗАПАСНОЙ ВАРИАНТ (если модель не загрузилась) ---
 if not risk_model_loaded:
     print("⚠️ Использую формулу ×20 (запасной вариант)")
     
     if len(df_selected) >= 2:
-        last_values = df_selected.iloc[-1]
-        prev_values = df_selected.iloc[-2]
-        
-        changes = {}
-        for feature in features:
-            if prev_values[feature] != 0:
-                changes[feature] = (last_values[feature] - prev_values[feature]) / abs(prev_values[feature])
-            else:
-                changes[feature] = 0
-        
         base_change = sum(changes.get(f, 0) * weights.get(f, 0) for f in features)
         amplified_change = base_change * 20
         danger_index = 50 + amplified_change * 50
@@ -319,7 +329,6 @@ if not risk_model_loaded:
         danger_index = 50.0
         status = "⚖️ Стабильно"
         amplified_change = 0
-        changes = {}
 
 # --- 11. СОХРАНЯЕМ РЕЗУЛЬТАТ ---
 result = {
@@ -327,7 +336,7 @@ result = {
     "danger_index": danger_index,
     "danger_status": status,
     "weighted_change": amplified_change,
-    "changes": changes if 'changes' in locals() else {},
+    "changes": changes,
     "forecast": future_prices.tolist(),
     "weekly": {
         "gold": float(future_prices[6]) if len(future_prices) > 6 else None,
