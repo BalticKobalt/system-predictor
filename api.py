@@ -5,6 +5,7 @@ import os
 import torch
 import torch.nn as nn
 import threading
+import urllib.request
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -147,36 +148,42 @@ def get_features():
 
 @app.post("/update")
 def trigger_update():
-    """Запускает пересчёт прогноза в фоне (используется внешним ежедневным cron-ом).
-    Важно: пересчёт идёт в том же процессе (в отдельном потоке), чтобы не грузить
-    torch второй раз — на бесплатном тарифе Render это привело бы к OOM."""
-    status_path = 'data/update_status.json'
-    def _run():
-        try:
-            with open(status_path, 'w') as f:
-                json.dump({"state": "running", "started": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}, f)
-            from update_forecast import run_update
-            ok = run_update()
-            with open(status_path, 'w') as f:
-                json.dump({"state": "done" if ok else "error",
-                           "ok": bool(ok),
-                           "finished": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}, f)
-        except Exception as e:
-            with open(status_path, 'w') as f:
-                json.dump({"state": "error", "error": str(e),
-                           "finished": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}, f)
-            print(f"❌ Ошибка пересчёта: {e}")
-    threading.Thread(target=_run, daemon=True).start()
-    return {"status": "started", "note": "Пересчёт запущен в фоне, файл обновится через ~1-2 мин."}
+    """Запускает ежедневный пересчёт, диспетчеризуя GitHub Actions workflow.
 
-
-@app.get("/update-status")
-def update_status():
-    p = 'data/update_status.json'
-    if not os.path.exists(p):
-        return {"state": "never_run"}
-    with open(p, encoding='utf-8') as f:
-        return json.load(f)
+    Важно: живой контейнер Render не может сам перезаписать отдаваемый файл
+    (данные берутся из закоммиченного в репозиторий forecast_result.json, а
+    контейнер пересобирается при пуше). Поэтому /update просто запускает workflow,
+    который пересчитывает прогноз, коммитит и пушит файл — Render пересобирается
+    и начинает отдавать свежие данные. Это надёжнее внутреннего планировщика GitHub,
+    т.к. запуск инициирует внешний cron (cron-job.org)."""
+    token = os.environ.get("GITHUB_PAT")
+    if not token:
+        return JSONResponse(
+            status_code=500,
+            content={"error": "GITHUB_PAT не задан в переменных окружения Render"}
+        )
+    url = ("https://api.github.com/repos/BalticKobalt/system-predictor/"
+           "actions/workflows/update-forecast.yml/dispatches")
+    req = urllib.request.Request(
+        url,
+        data=json.dumps({"ref": "main"}).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "Content-Type": "application/json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return {
+                "status": "dispatched",
+                "http": resp.status,
+                "note": "Workflow запущен. Через ~2-4 мин данные обновятся и Render пересоберётся.",
+            }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 if __name__ == "__main__":
     import uvicorn
