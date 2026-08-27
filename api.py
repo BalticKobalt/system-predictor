@@ -4,8 +4,7 @@ import json
 import os
 import torch
 import torch.nn as nn
-import subprocess
-import sys
+import threading
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -148,12 +147,17 @@ def get_features():
 
 @app.post("/update")
 def trigger_update():
-    """Запускает пересчёт прогноза в фоне (используется внешним ежедневным cron-ом)."""
-    try:
-        subprocess.Popen([sys.executable, "update_forecast.py"])
-        return {"status": "started", "note": "Пересчёт запущен в фоне, файл обновится через ~1-2 мин."}
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+    """Запускает пересчёт прогноза в фоне (используется внешним ежедневным cron-ом).
+    Важно: пересчёт идёт в том же процессе (в отдельном потоке), чтобы не грузить
+    torch второй раз — на бесплатном тарифе Render это привело бы к OOM."""
+    def _run():
+        try:
+            from update_forecast import run_update
+            run_update()
+        except Exception as e:
+            print(f"❌ Ошибка пересчёта: {e}")
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "started", "note": "Пересчёт запущен в фоне, файл обновится через ~1-2 мин."}
 
 if __name__ == "__main__":
     import uvicorn
