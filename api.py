@@ -150,14 +150,33 @@ def trigger_update():
     """Запускает пересчёт прогноза в фоне (используется внешним ежедневным cron-ом).
     Важно: пересчёт идёт в том же процессе (в отдельном потоке), чтобы не грузить
     torch второй раз — на бесплатном тарифе Render это привело бы к OOM."""
+    status_path = os.path.join(BASE_DIR, 'data', 'update_status.json')
     def _run():
         try:
+            with open(status_path, 'w') as f:
+                json.dump({"state": "running", "started": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}, f)
             from update_forecast import run_update
-            run_update()
+            ok = run_update()
+            with open(status_path, 'w') as f:
+                json.dump({"state": "done" if ok else "error",
+                           "ok": bool(ok),
+                           "finished": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}, f)
         except Exception as e:
+            with open(status_path, 'w') as f:
+                json.dump({"state": "error", "error": str(e),
+                           "finished": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}, f)
             print(f"❌ Ошибка пересчёта: {e}")
     threading.Thread(target=_run, daemon=True).start()
     return {"status": "started", "note": "Пересчёт запущен в фоне, файл обновится через ~1-2 мин."}
+
+
+@app.get("/update-status")
+def update_status():
+    p = os.path.join(BASE_DIR, 'data', 'update_status.json')
+    if not os.path.exists(p):
+        return {"state": "never_run"}
+    with open(p, encoding='utf-8') as f:
+        return json.load(f)
 
 if __name__ == "__main__":
     import uvicorn
