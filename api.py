@@ -150,7 +150,7 @@ def trigger_update():
     """Запускает пересчёт прогноза в фоне (используется внешним ежедневным cron-ом).
     Важно: пересчёт идёт в том же процессе (в отдельном потоке), чтобы не грузить
     torch второй раз — на бесплатном тарифе Render это привело бы к OOM."""
-    status_path = os.path.join(BASE_DIR, 'data', 'update_status.json')
+    status_path = 'data/update_status.json'
     def _run():
         try:
             with open(status_path, 'w') as f:
@@ -172,7 +172,7 @@ def trigger_update():
 
 @app.get("/update-status")
 def update_status():
-    p = os.path.join(BASE_DIR, 'data', 'update_status.json')
+    p = 'data/update_status.json'
     if not os.path.exists(p):
         return {"state": "never_run"}
     with open(p, encoding='utf-8') as f:
