@@ -4,6 +4,8 @@ import json
 import os
 import torch
 import torch.nn as nn
+import subprocess
+import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -143,6 +145,15 @@ def get_features():
             "gpr", "gecon", "crisis_ratio", "conflict_intensity"
         ]
     }
+
+@app.post("/update")
+def trigger_update():
+    """Запускает пересчёт прогноза в фоне (используется внешним ежедневным cron-ом)."""
+    try:
+        subprocess.Popen([sys.executable, "update_forecast.py"])
+        return {"status": "started", "note": "Пересчёт запущен в фоне, файл обновится через ~1-2 мин."}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 if __name__ == "__main__":
     import uvicorn
