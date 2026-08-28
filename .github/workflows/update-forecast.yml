@@ -20,11 +20,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas numpy yfinance torch scikit-learn openpyxl pyreadstat requests
       - name: Run forecast update
+        continue-on-error: true
         run: python update_forecast.py
-      - name: Commit and push if changed
+      - name: Commit and push (always, daily heartbeat)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          date -u +'%Y-%m-%d %H:%M:%S UTC' > data/_last_run.txt
           git add -A data/
-          git diff --staged --quiet || git commit -m "Automated forecast update $(date -u +'%Y-%m-%d')"
+          git commit -m "Automated forecast update $(date -u +'%Y-%m-%d')" || echo "nothing to commit"
+          git pull --rebase --autostash || true
           git push
