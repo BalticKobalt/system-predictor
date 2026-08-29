@@ -339,9 +339,18 @@ def run_update():
                 amplified_change = 0
 
         # --- 12. СОХРАНЯЕМ РЕЗУЛЬТАТ ---
+        prev_index_val = None
+        try:
+            with open(FORECAST_PATH, 'r', encoding='utf-8') as f:
+                old = json.load(f)
+            if isinstance(old.get('danger_index'), (int, float)):
+                prev_index_val = float(old['danger_index'])
+        except Exception:
+            prev_index_val = None
         result = {
             "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "danger_index": danger_index,
+            "prev_danger_index": prev_index_val,
             "danger_status": status,
             "weighted_change": amplified_change,
             "changes": changes,
