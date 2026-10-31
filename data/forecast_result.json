@@ -1,9 +1,9 @@
 {
-  "last_update": "2026-10-30 11:52:27",
-  "danger_index": 54.347129821777344,
-  "prev_danger_index": 54.47297286987305,
+  "last_update": "2026-10-31 11:26:21",
+  "danger_index": 54.01678466796875,
+  "prev_danger_index": 54.347129821777344,
   "danger_status": "\ud83d\udfe1 \u041d\u0430\u043f\u0440\u044f\u0436\u0451\u043d\u043d\u043e",
-  "weighted_change": 0.08694259643554687,
+  "weighted_change": 0.080335693359375,
   "changes": {
     "gold": -0.01403464137917698,
     "brent": 0.0,
